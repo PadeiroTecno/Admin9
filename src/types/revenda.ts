@@ -2,6 +2,7 @@ export interface Revenda {
   codigo: number;
   codigo_revenda: number;
   id: string;
+  usuario?: string;
   nome: string;
   email: string;
   avatar?: string;
@@ -47,6 +48,7 @@ export interface Revenda {
 
 export interface RevendaFormData {
   nome: string;
+  usuario: string;
   email: string;
   telefone?: string;
   senha: string;

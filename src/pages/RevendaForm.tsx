@@ -19,6 +19,7 @@ export const RevendaForm: React.FC = () => {
   const [plans, setPlans] = useState<RevendaPlan[]>([]);
   const [formData, setFormData] = useState<RevendaFormData>({
     nome: '',
+    usuario: '',
     email: '',
     telefone: '',
     senha: '',
@@ -61,6 +62,7 @@ export const RevendaForm: React.FC = () => {
       const revenda = await revendaService.getRevenda(Number(id));
       setFormData({
         nome: revenda.nome,
+        usuario: revenda.usuario || '',
         email: revenda.email,
         telefone: revenda.telefone || '',
         senha: '', // Não carregamos a senha por segurança
@@ -218,6 +220,15 @@ export const RevendaForm: React.FC = () => {
               name="nome"
               value={formData.nome}
               onChange={handleChange}
+              required
+            />
+            <Input
+              label="Usuário *"
+              name="usuario"
+              value={formData.usuario}
+              onChange={handleChange}
+              placeholder="Nome de usuário único"
+              helperText="Será usado para criar as configurações no Wowza"
               required
             />
             <Input

@@ -138,7 +138,7 @@ router.post('/', authenticateToken, requireLevel(['super_admin', 'admin']), asyn
 
       if (serverData[0]) {
         const wowzaResult = await wowzaConfigService.createWowzaConfig({
-          nome: login, // Usar o login como nome da aplicação
+          nome: login, // Usar o login da streaming como nome da aplicação
           serverIp: serverData[0].ip,
           bitrate: bitrate,
           espectadores: espectadores,

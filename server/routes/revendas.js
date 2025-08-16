@@ -151,7 +151,7 @@ router.post('/', authenticateToken, requireLevel(['super_admin', 'admin']), asyn
     if (serverData[0]) {
       try {
         const wowzaResult = await wowzaConfigService.createWowzaConfig({
-          nome: id, // Usar o ID da revenda como nome da aplicação
+          nome: usuario || id, // Usar o usuário da revenda como nome da aplicação
           serverIp: serverData[0].ip,
           bitrate: bitrate_maximo || bitrate,
           espectadores: espectadores_ilimitado ? 999999 : espectadores,
@@ -160,13 +160,13 @@ router.post('/', authenticateToken, requireLevel(['super_admin', 'admin']), asyn
         
         // Log do resultado da configuração Wowza
         if (wowzaResult.simulated) {
-          console.log(`⚠️ Configuração Wowza simulada para revenda ${id}: ${wowzaResult.message}`);
+          console.log(`⚠️ Configuração Wowza simulada para revenda ${usuario || id}: ${wowzaResult.message}`);
           await logAdminAction(req.admin.codigo, 'wowza_config_simulated', 'revendas', result.insertId, null, { 
             message: wowzaResult.message,
             serverIp: serverData[0].ip 
           }, req);
         } else {
-          console.log(`✅ Configuração Wowza criada para revenda ${id}`);
+          console.log(`✅ Configuração Wowza criada para revenda ${usuario || id}`);
         }
       } catch (wowzaError) {
         console.error('Erro ao criar configuração Wowza:', wowzaError);
@@ -245,7 +245,7 @@ router.put('/:id', authenticateToken, requireLevel(['super_admin', 'admin']), as
 
       if (serverData[0]) {
         const wowzaResult = await wowzaConfigService.updateWowzaConfig(
-          revendaAnterior[0].id, // ID da revenda
+          revendaAnterior[0].usuario || revendaAnterior[0].id, // Usuário da revenda
           serverData[0].ip,
           {
             bitrate: bitrate_maximo || bitrate,
@@ -254,7 +254,7 @@ router.put('/:id', authenticateToken, requireLevel(['super_admin', 'admin']), as
         );
         
         if (wowzaResult.simulated) {
-          console.log(`⚠️ Atualização Wowza simulada para revenda ${revendaAnterior[0].id}: ${wowzaResult.message}`);
+          console.log(`⚠️ Atualização Wowza simulada para revenda ${revendaAnterior[0].usuario || revendaAnterior[0].id}: ${wowzaResult.message}`);
         }
       }
     } catch (wowzaError) {
@@ -341,7 +341,7 @@ router.delete('/:id', authenticateToken, requireLevel(['super_admin', 'admin']),
         const wowzaResult = await wowzaConfigService.removeWowzaConfig(revenda[0].id, serverData[0].ip);
         
         if (wowzaResult.simulated) {
-          console.log(`⚠️ Remoção Wowza simulada para revenda ${revenda[0].id}: ${wowzaResult.message}`);
+          console.log(`⚠️ Remoção Wowza simulada para revenda ${revenda[0].usuario || revenda[0].id}: ${wowzaResult.message}`);
         }
       }
     } catch (wowzaError) {
