@@ -147,6 +147,22 @@ class RevendaService {
       throw error;
     }
   }
+
+  async syncWowzaConfig(id: number): Promise<void> {
+    try {
+      const response = await fetch(`${this.baseURL}/revendas/${id}/sync-wowza`, {
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Erro ao sincronizar configuração Wowza');
+      }
+    } catch (error) {
+      throw error;
+    }
+  }
 }
 
 export const revendaService = new RevendaService();

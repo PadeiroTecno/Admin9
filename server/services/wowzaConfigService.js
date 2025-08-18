@@ -7,8 +7,6 @@ const execAsync = promisify(exec);
 class WowzaConfigService {
   constructor() {
     this.wowzaBasePath = '/usr/local/WowzaStreamingEngine-4.8.0/conf';
-    this.isProduction = process.env.NODE_ENV === 'production';
-    this.isDevelopment = process.env.NODE_ENV === 'development';
   }
 
   /**
@@ -24,28 +22,6 @@ class WowzaConfigService {
       console.log(`   - Bitrate: ${bitrate} kbps`);
       console.log(`   - Espectadores: ${espectadores}`);
       console.log(`   - Aplicação: ${nome}`);
-      
-      // Em desenvolvimento, simular a criação
-      if (this.isDevelopment) {
-        console.log(`⚠️ Modo desenvolvimento: Simulando criação de configuração Wowza`);
-        return {
-          success: true,
-          simulated: true,
-          message: `Configuração simulada criada para ${nome} no servidor ${serverIp}`
-        };
-      }
-
-      // Verificar se sshpass está disponível
-      try {
-        await execAsync('which sshpass');
-      } catch (error) {
-        console.log(`⚠️ sshpass não disponível: Simulando configuração Wowza`);
-        return {
-          success: true,
-          simulated: true,
-          message: `sshpass não instalado - Configuração simulada para ${nome}`
-        };
-      }
 
       // Buscar dados do servidor
       const serverData = await this.getServerData(serverIp);
@@ -53,7 +29,14 @@ class WowzaConfigService {
         throw new Error(`Servidor não encontrado: ${serverIp}`);
       }
 
-      // Criar diretório da aplicação (corrigir caminhos para Linux)
+      // Verificar se a configuração já existe
+      const exists = await this.configExists(nome, serverIp);
+      if (exists) {
+        console.log(`⚠️ Configuração já existe para ${nome}, atualizando...`);
+        return await this.updateWowzaConfig(nome, serverIp, { bitrate, espectadores });
+      }
+
+      // Criar diretório da aplicação
       const appDir = path.posix.join(this.wowzaBasePath, nome);
       await this.createDirectory(appDir, serverIp, serverData);
 
@@ -70,27 +53,20 @@ class WowzaConfigService {
       await this.createDirectory(streamingDir, serverIp, serverData);
 
       // Definir permissões corretas
-      await this.executeSSHCommand(`chown -R wowza:wowza ${appDir}`, serverIp, serverData);
-      await this.executeSSHCommand(`chmod -R 755 ${appDir}`, serverIp, serverData);
-      await this.executeSSHCommand(`chown -R wowza:wowza ${streamingDir}`, serverIp, serverData);
-      await this.executeSSHCommand(`chmod -R 755 ${streamingDir}`, serverIp, serverData);
+      await this.executeSSHCommand(`chown -R wowza:wowza "${appDir}"`, serverIp, serverData);
+      await this.executeSSHCommand(`chmod -R 755 "${appDir}"`, serverIp, serverData);
+      await this.executeSSHCommand(`chown -R wowza:wowza "${streamingDir}"`, serverIp, serverData);
+      await this.executeSSHCommand(`chmod -R 755 "${streamingDir}"`, serverIp, serverData);
 
       // Reiniciar o Wowza para aplicar as configurações
       await this.restartWowza(serverIp, serverData);
 
       console.log(`✅ Configuração Wowza criada com sucesso para: ${nome}`);
-      return { success: true, simulated: false };
+      return { success: true, created: true };
       
     } catch (error) {
       console.error(`❌ Erro ao criar configuração Wowza para ${nome}:`, error);
-      
-      // Em caso de erro, retornar simulação ao invés de falhar
-      console.log(`⚠️ Fallback: Simulando configuração devido ao erro`);
-      return {
-        success: true,
-        simulated: true,
-        message: `Erro na configuração real - Simulada para ${nome}: ${error.message}`
-      };
+      throw error;
     }
   }
 
@@ -101,29 +77,6 @@ class WowzaConfigService {
     try {
       console.log(`🗑️ Removendo configuração Wowza para: ${nome}`);
       
-      // Em desenvolvimento, simular a remoção
-      if (this.isDevelopment) {
-        console.log(`⚠️ Modo desenvolvimento: Simulando remoção de configuração Wowza`);
-        return {
-          success: true,
-          simulated: true,
-          message: `Configuração simulada removida para ${nome} no servidor ${serverIp}`
-        };
-      }
-
-      // Verificar se sshpass está disponível
-      try {
-        await execAsync('which sshpass');
-      } catch (error) {
-        console.log(`⚠️ sshpass não disponível: Simulando remoção Wowza`);
-        return {
-          success: true,
-          simulated: true,
-          message: `sshpass não instalado - Remoção simulada para ${nome}`
-        };
-      }
-      
-      // Buscar dados do servidor
       const serverData = await this.getServerData(serverIp);
       if (!serverData) {
         throw new Error(`Servidor não encontrado: ${serverIp}`);
@@ -136,23 +89,17 @@ class WowzaConfigService {
       await this.executeSSHCommand(`systemctl stop WowzaStreamingEngine`, serverIp, serverData);
       
       // Remover diretórios
-      await this.executeSSHCommand(`rm -rf ${appDir}`, serverIp, serverData);
-      await this.executeSSHCommand(`rm -rf ${streamingDir}`, serverIp, serverData);
+      await this.executeSSHCommand(`rm -rf "${appDir}"`, serverIp, serverData);
+      await this.executeSSHCommand(`rm -rf "${streamingDir}"`, serverIp, serverData);
       
       // Reiniciar o Wowza
       await this.restartWowza(serverIp, serverData);
       
       console.log(`✅ Configuração Wowza removida com sucesso para: ${nome}`);
-      return { success: true, simulated: false };
+      return { success: true, removed: true };
     } catch (error) {
       console.error(`❌ Erro ao remover configuração Wowza para ${nome}:`, error);
-      
-      // Em caso de erro, retornar simulação
-      return {
-        success: true,
-        simulated: true,
-        message: `Erro na remoção real - Simulada para ${nome}: ${error.message}`
-      };
+      throw error;
     }
   }
 
@@ -164,29 +111,6 @@ class WowzaConfigService {
       console.log(`🔄 Atualizando configuração Wowza para: ${nome}`);
       console.log(`🔧 Atualizações:`, updates);
       
-      // Em desenvolvimento, simular a atualização
-      if (this.isDevelopment) {
-        console.log(`⚠️ Modo desenvolvimento: Simulando atualização de configuração Wowza`);
-        return {
-          success: true,
-          simulated: true,
-          message: `Configuração simulada atualizada para ${nome} no servidor ${serverIp}`
-        };
-      }
-
-      // Verificar se sshpass está disponível
-      try {
-        await execAsync('which sshpass');
-      } catch (error) {
-        console.log(`⚠️ sshpass não disponível: Simulando atualização Wowza`);
-        return {
-          success: true,
-          simulated: true,
-          message: `sshpass não instalado - Atualização simulada para ${nome}`
-        };
-      }
-      
-      // Buscar dados do servidor
       const serverData = await this.getServerData(serverIp);
       if (!serverData) {
         throw new Error(`Servidor não encontrado: ${serverIp}`);
@@ -196,7 +120,7 @@ class WowzaConfigService {
       const applicationXmlPath = path.posix.join(appDir, 'Application.xml');
       
       // Verificar se a configuração existe
-      const checkCommand = `test -f ${applicationXmlPath} && echo "exists" || echo "not found"`;
+      const checkCommand = `test -f "${applicationXmlPath}" && echo "exists" || echo "not found"`;
       const result = await this.executeSSHCommand(checkCommand, serverIp, serverData);
       
       if (result.trim() === 'not found') {
@@ -218,16 +142,65 @@ class WowzaConfigService {
       await this.restartWowza(serverIp, serverData);
 
       console.log(`✅ Configuração Wowza atualizada com sucesso para: ${nome}`);
-      return { success: true, simulated: false };
+      return { success: true, updated: true };
     } catch (error) {
       console.error(`❌ Erro ao atualizar configuração Wowza para ${nome}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Verifica se uma configuração existe no servidor
+   */
+  async configExists(nome, serverIp) {
+    try {
+      const serverData = await this.getServerData(serverIp);
+      if (!serverData) {
+        return false;
+      }
+
+      const appDir = path.posix.join(this.wowzaBasePath, nome);
+      const checkCommand = `test -d "${appDir}" && echo "exists" || echo "not found"`;
+      const result = await this.executeSSHCommand(checkCommand, serverIp, serverData);
       
-      // Em caso de erro, retornar simulação
-      return {
-        success: true,
-        simulated: true,
-        message: `Erro na atualização real - Simulada para ${nome}: ${error.message}`
-      };
+      return result.trim() === 'exists';
+    } catch (error) {
+      console.error(`Erro ao verificar configuração para ${nome}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Sincroniza configuração - verifica se existe e cria se necessário
+   */
+  async syncWowzaConfig(config) {
+    const { nome, serverIp, bitrate = 4500, espectadores = 999999, senha } = config;
+    
+    try {
+      console.log(`🔄 Sincronizando configuração Wowza para: ${nome}`);
+      
+      const exists = await this.configExists(nome, serverIp);
+      
+      if (exists) {
+        console.log(`✅ Configuração já existe para ${nome}`);
+        return { 
+          success: true, 
+          action: 'verified',
+          message: `Configuração verificada para ${nome}` 
+        };
+      } else {
+        console.log(`📝 Configuração não existe, criando para ${nome}`);
+        const result = await this.createWowzaConfig(config);
+        return { 
+          success: true, 
+          action: 'created',
+          message: `Configuração criada para ${nome}`,
+          ...result
+        };
+      }
+    } catch (error) {
+      console.error(`❌ Erro ao sincronizar configuração para ${nome}:`, error);
+      throw error;
     }
   }
 
@@ -243,7 +216,7 @@ class WowzaConfigService {
       try {
         await execAsync('which sshpass');
       } catch (error) {
-        throw new Error('sshpass não está instalado. Execute: apt-get install sshpass');
+        throw new Error('sshpass não está instalado. Execute: npm install sshpass ou apt-get install sshpass');
       }
 
       const sshCommand = `sshpass -p '${serverData.senha_root}' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -p ${serverData.porta_ssh} root@${serverIp} "${command}"`;
@@ -381,16 +354,6 @@ WOWZA_CONFIG_EOF`;
     try {
       console.log(`🔑 Atualizando senha para ${nome}`);
       
-      // Em desenvolvimento, simular
-      if (this.isDevelopment) {
-        console.log(`⚠️ Modo desenvolvimento: Simulando atualização de senha`);
-        return {
-          success: true,
-          simulated: true,
-          message: `Senha simulada atualizada para ${nome}`
-        };
-      }
-      
       const serverData = await this.getServerData(serverIp);
       if (!serverData) {
         throw new Error(`Servidor não encontrado: ${serverIp}`);
@@ -415,42 +378,10 @@ WOWZA_CONFIG_EOF`;
       await this.restartWowza(serverIp, serverData);
 
       console.log(`✅ Senha atualizada com sucesso para: ${nome}`);
-      return { success: true, simulated: false };
+      return { success: true, updated: true };
     } catch (error) {
       console.error(`❌ Erro ao atualizar senha para ${nome}:`, error);
-      
-      // Em caso de erro, retornar simulação
-      return {
-        success: true,
-        simulated: true,
-        message: `Erro na atualização real - Senha simulada para ${nome}: ${error.message}`
-      };
-    }
-  }
-
-  /**
-   * Verifica se uma configuração existe
-   */
-  async configExists(nome, serverIp) {
-    try {
-      // Em desenvolvimento, sempre retornar false
-      if (this.isDevelopment) {
-        return false;
-      }
-
-      const serverData = await this.getServerData(serverIp);
-      if (!serverData) {
-        return false;
-      }
-
-      const appDir = path.posix.join(this.wowzaBasePath, nome);
-      const checkCommand = `test -d "${appDir}" && echo "exists" || echo "not found"`;
-      const result = await this.executeSSHCommand(checkCommand, serverIp, serverData);
-      
-      return result.trim() === 'exists';
-    } catch (error) {
-      console.error(`Erro ao verificar configuração para ${nome}:`, error);
-      return false;
+      throw error;
     }
   }
 
@@ -459,11 +390,6 @@ WOWZA_CONFIG_EOF`;
    */
   async listConfigurations(serverIp) {
     try {
-      // Em desenvolvimento, retornar lista simulada
-      if (this.isDevelopment) {
-        return `Modo desenvolvimento - Configurações simuladas para ${serverIp}`;
-      }
-
       const serverData = await this.getServerData(serverIp);
       if (!serverData) {
         throw new Error(`Servidor não encontrado: ${serverIp}`);
@@ -484,13 +410,6 @@ WOWZA_CONFIG_EOF`;
    */
   async backupConfiguration(nome, serverIp) {
     try {
-      // Em desenvolvimento, simular backup
-      if (this.isDevelopment) {
-        const backupPath = `/tmp/backup_${nome}_${Date.now()}`;
-        console.log(`⚠️ Modo desenvolvimento: Backup simulado criado em ${backupPath}`);
-        return backupPath;
-      }
-
       const serverData = await this.getServerData(serverIp);
       if (!serverData) {
         throw new Error(`Servidor não encontrado: ${serverIp}`);
@@ -515,16 +434,6 @@ WOWZA_CONFIG_EOF`;
    */
   async restoreConfiguration(nome, serverIp, backupPath) {
     try {
-      // Em desenvolvimento, simular restauração
-      if (this.isDevelopment) {
-        console.log(`⚠️ Modo desenvolvimento: Restauração simulada para ${nome} de ${backupPath}`);
-        return {
-          success: true,
-          simulated: true,
-          message: `Configuração simulada restaurada para ${nome}`
-        };
-      }
-
       const serverData = await this.getServerData(serverIp);
       if (!serverData) {
         throw new Error(`Servidor não encontrado: ${serverIp}`);
@@ -546,7 +455,7 @@ WOWZA_CONFIG_EOF`;
       await this.restartWowza(serverIp, serverData);
       
       console.log(`✅ Configuração restaurada para ${nome}`);
-      return { success: true, simulated: false };
+      return { success: true, restored: true };
     } catch (error) {
       console.error(`Erro ao restaurar configuração para ${nome}:`, error);
       throw error;
@@ -558,16 +467,6 @@ WOWZA_CONFIG_EOF`;
    */
   async checkWowzaStatus(serverIp) {
     try {
-      // Em desenvolvimento, retornar status simulado
-      if (this.isDevelopment) {
-        return {
-          status: 'active',
-          version: 'Wowza Streaming Engine 4.8.0 (simulado)',
-          isRunning: true,
-          simulated: true
-        };
-      }
-
       const serverData = await this.getServerData(serverIp);
       if (!serverData) {
         throw new Error(`Servidor não encontrado: ${serverIp}`);
@@ -582,20 +481,11 @@ WOWZA_CONFIG_EOF`;
       return {
         status: status.trim(),
         version: version.trim(),
-        isRunning: status.trim() === 'active',
-        simulated: false
+        isRunning: status.trim() === 'active'
       };
     } catch (error) {
       console.error('Erro ao verificar status do Wowza:', error);
-      
-      // Retornar status simulado em caso de erro
-      return {
-        status: 'unknown',
-        version: 'Erro ao verificar versão',
-        isRunning: false,
-        simulated: true,
-        error: error.message
-      };
+      throw error;
     }
   }
 
@@ -915,62 +805,11 @@ WOWZA_CONFIG_EOF`;
   }
 
   /**
-   * Método para gerar script de configuração manual (fallback)
-   */
-  generateManualConfigScript(nome, serverIp, bitrate, espectadores, senha) {
-    const configs = {
-      applicationXml: this.generateApplicationXml(nome, serverIp, bitrate, espectadores),
-      publishPassword: this.generatePublishPassword(nome, senha),
-      aliasMapPlay: this.generateAliasMapPlay(nome),
-      aliasMapStream: this.generateAliasMapStream(nome)
-    };
-    
-    return {
-      instructions: `
-# Instruções para configuração manual do Wowza para: ${nome}
-
-## 1. Conectar ao servidor via SSH:
-ssh -p 6985 root@${serverIp}
-
-## 2. Criar diretório da aplicação:
-mkdir -p "${this.wowzaBasePath}/${nome}"
-
-## 3. Criar diretório de streaming:
-mkdir -p "/home/streaming/${nome}"
-
-## 4. Definir permissões:
-chown -R wowza:wowza "${this.wowzaBasePath}/${nome}"
-chmod -R 755 "${this.wowzaBasePath}/${nome}"
-chown -R wowza:wowza "/home/streaming/${nome}"
-chmod -R 755 "/home/streaming/${nome}"
-
-## 5. Reiniciar o Wowza Streaming Engine:
-systemctl restart WowzaStreamingEngine
-
-## 6. Verificar status:
-systemctl status WowzaStreamingEngine
-      `,
-      files: configs
-    };
-  }
-
-  /**
    * Limpa configurações órfãs (sem usuário correspondente no banco)
    */
   async cleanupOrphanedConfigs(serverIp) {
     try {
       console.log(`🧹 Limpando configurações órfãs no servidor: ${serverIp}`);
-      
-      // Em desenvolvimento, simular limpeza
-      if (this.isDevelopment) {
-        console.log(`⚠️ Modo desenvolvimento: Limpeza simulada no servidor ${serverIp}`);
-        return { 
-          removed: 0, 
-          configs: [],
-          simulated: true,
-          message: 'Limpeza simulada - nenhuma configuração órfã encontrada'
-        };
-      }
       
       const serverData = await this.getServerData(serverIp);
       if (!serverData) {
@@ -985,11 +824,11 @@ systemctl status WowzaStreamingEngine
       
       // Buscar usuários válidos no banco
       const { pool } = await import('../config/database.js');
-      const [revendas] = await pool.execute('SELECT id, usuario FROM revendas');
+      const [revendas] = await pool.execute('SELECT usuario FROM revendas WHERE usuario IS NOT NULL AND usuario != ""');
       const [streamings] = await pool.execute('SELECT login FROM streamings');
       
       const validNames = [
-        ...revendas.map(r => r.usuario || r.id), // Priorizar usuário sobre ID
+        ...revendas.map(r => r.usuario),
         ...streamings.map(s => s.login)
       ];
       
@@ -1028,14 +867,7 @@ systemctl status WowzaStreamingEngine
       
     } catch (error) {
       console.error('Erro ao limpar configurações órfãs:', error);
-      
-      // Retornar resultado simulado em caso de erro
-      return {
-        removed: 0,
-        configs: [],
-        simulated: true,
-        error: error.message
-      };
+      throw error;
     }
   }
 }

@@ -124,6 +124,24 @@ export const Revendas: React.FC = () => {
     }
   };
 
+  const handleSyncWowza = async (id: number) => {
+    try {
+      await revendaService.syncWowzaConfig(id);
+      addNotification({
+        type: 'success',
+        title: 'Sucesso',
+        message: 'Configuração Wowza sincronizada com sucesso.'
+      });
+      loadRevendas();
+    } catch (error: any) {
+      addNotification({
+        type: 'error',
+        title: 'Erro',
+        message: error.message || 'Não foi possível sincronizar a configuração Wowza.'
+      });
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     const badges = {
       ativo: 'bg-green-100 text-green-800',
@@ -277,6 +295,13 @@ export const Revendas: React.FC = () => {
                         title="Ver detalhes"
                       >
                         <Eye size={18} />
+                      </button>
+                      <button
+                        onClick={() => handleSyncWowza(revenda.codigo)}
+                        className="p-2 rounded-lg bg-purple-50 text-purple-600 hover:bg-purple-100 hover:text-purple-700 transition-all duration-200 hover:scale-110"
+                        title="Sincronizar Wowza"
+                      >
+                        <Activity size={18} />
                       </button>
                       {hasPermission('revendas', 'editar') && (
                         <Link
